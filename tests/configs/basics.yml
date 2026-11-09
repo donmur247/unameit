@@ -5,7 +5,7 @@ tokens:
     default: /projects
   project:
     pattern: "[a-zA-Z0-9-]"
-    value: "${project}"
+    value: "$project"
 
 templates:
-  project_root: ${root.default}/${project.value}
+  project_root: ${tokens.root.default}/${tokens.project.value}
