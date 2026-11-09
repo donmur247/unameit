@@ -1,0 +1,11 @@
+# Basic configuration template for UNameIt
+
+tokens:
+  root:
+    default: /projects
+  project:
+    pattern: "[a-zA-Z0-9-]"
+    value: "${project}"
+
+templates:
+  project_root: ${root.default}/${project.value}

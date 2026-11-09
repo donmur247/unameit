@@ -1,0 +1,25 @@
+[project]
+name = "unameit"
+version = "0.1.0"
+description = "A lightweght Python path building and ingestion."
+readme = "README.md"
+authors = [
+    { name = "Donny Murdiyono", email = "donnymurdiyono@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "omegaconf>=2.4.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.17,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
