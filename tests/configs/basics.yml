@@ -5,7 +5,8 @@ tokens:
     default: /projects
   project:
     pattern: "[a-zA-Z0-9-]"
-    value: "$project"
 
 templates:
-  project_root: ${tokens.root.default}/${tokens.project.value}
+  project_root: $root/$project
+  # Template with empty value, treated as not found by build_path()
+  empty_template: ""
