@@ -73,7 +73,7 @@ class UNameIt:
             raise ValueError("No tokens section in config")
 
     def _replace_tokens_with_defaults(
-        self, template: str, tokens: list[Any], payload: dict[str, Any]
+        self, template: str, tokens: list[str], payload: dict[str, Any]
     ) -> str:
         """Replace collected tokens with default values for each token match in config.
         Tokens provided by payload are skipped here, as payload values
@@ -81,7 +81,7 @@ class UNameIt:
 
         Args:
             template (str): Template string to replace tokens in.
-            tokens (list[Any]): List of tokens to replace in template.
+            tokens (list[str]): List of tokens to replace in template.
             payload (dict[str, Any]): Dictionary of token values to replace with.
 
         Returns:
@@ -114,6 +114,40 @@ class UNameIt:
             if token in payload:
                 result = result.replace(f"${token}", str(payload[token]))
         return result
+
+    def _build_search_pattern_from_template(self, template: str) -> str:
+        """Build search pattern from template string.
+
+        Literal parts are escaped and matched verbatim, while each token
+        becomes a named group using the pattern set in the config
+        (matched one or more times), falling back to any non-empty path
+        segment when the token defines no pattern.
+
+        Args:
+            template (str): Template string to build pattern from.
+
+        Returns:
+            str: Search pattern string.
+        """
+        search_pattern = ""
+        seen = set()
+        pos = 0
+        for match in re.finditer(r"\$(\w+)", template):
+            search_pattern += re.escape(template[pos : match.start()])
+            token = match.group(1)
+            if token in seen:
+                # Repeated token: use a back reference so it must match the same value.
+                search_pattern += f"(?P={token})"
+            else:
+                seen.add(token)
+                token_conf = self._tokens.get(token)
+                if token_conf is not None and "pattern" in token_conf:
+                    search_pattern += f"(?P<{token}>(?:{token_conf.pattern})+)"
+                else:
+                    search_pattern += f"(?P<{token}>[^/]+)"
+            pos = match.end()
+        search_pattern += re.escape(template[pos:])
+        return search_pattern
 
     def load(self, config_file: str) -> None:
         """Load config from provided config file.
@@ -181,28 +215,7 @@ class UNameIt:
         if not template.startswith("/"):
             path = path.removeprefix("/")
 
-        # Build a regular expression from the template: literal parts are escaped and
-        # matched verbatim, while each token becomes a named group using the pattern set
-        # in the config (matched one or more times), falling back to any non-empty path
-        # segment when the token defines no pattern.
-        search_pattern = ""
-        seen = set()
-        pos = 0
-        for match in re.finditer(r"\$(\w+)", template):
-            search_pattern += re.escape(template[pos : match.start()])
-            token = match.group(1)
-            if token in seen:
-                # Repeated token: use a backreference so it must match the same value.
-                search_pattern += f"(?P={token})"
-            else:
-                seen.add(token)
-                token_conf = self._tokens.get(token)
-                if token_conf is not None and "pattern" in token_conf:
-                    search_pattern += f"(?P<{token}>(?:{token_conf.pattern})+)"
-                else:
-                    search_pattern += f"(?P<{token}>[^/]+)"
-            pos = match.end()
-        search_pattern += re.escape(template[pos:])
+        search_pattern = self._build_search_pattern_from_template(template)
         logger.debug("Extract pattern: %s", search_pattern)
 
         # Match the built pattern against the whole path and collect the named groups.
