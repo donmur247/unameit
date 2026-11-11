@@ -6,6 +6,10 @@ from typing import Any
 
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from unameit.log import Logger
+
+logger = Logger(__name__)
+
 
 class UNameIt:
     """Core class definition of UNameIt."""
@@ -23,6 +27,10 @@ class UNameIt:
         self._conf = OmegaConf.create()
         self._tokens: DictConfig = OmegaConf.create()
         self._templates: DictConfig = OmegaConf.create()
+
+        logger.info(
+            "UNameIt initialized using config dir '%s'", self._config_dir.as_posix()
+        )
 
     @property
     def config_dir(self) -> str:
@@ -75,6 +83,8 @@ class UNameIt:
         self._tokens = self._conf.tokens
         self._templates = self._conf.templates
 
+        logger.info("Config loaded from '%s'", self._config_file.as_posix())
+
     def build_path(self, template_name: str, payload: dict[str, Any]) -> str | None:
         """Build path from selected template and payload data.
 
@@ -94,6 +104,7 @@ class UNameIt:
         # Longer tokens are substituted first to avoid prefix collisions (e.g. `$root`
         # clobbering `$root_dir`).
         tokens = sorted(set(re.findall(r"\$([\w]+)", template)), key=len, reverse=True)
+        logger.debug("Build tokens: %s", tokens)
 
         result = template
 
@@ -106,11 +117,13 @@ class UNameIt:
             token_conf = self._tokens.get(token)
             if token_conf is not None and "default" in token_conf:
                 result = result.replace(f"${token}", str(token_conf.default))
+        logger.debug("Build first pass result: %s", result)
 
         # Second pass: replace tokens with matching values from payload.
         for token in tokens:
             if token in payload:
                 result = result.replace(f"${token}", str(payload[token]))
+        logger.debug("Build second pass result: %s", result)
 
         return result
 
@@ -161,6 +174,7 @@ class UNameIt:
                     search_pattern += f"(?P<{token}>[^/]+)"
             pos = match.end()
         search_pattern += re.escape(template[pos:])
+        logger.debug("Extract pattern: %s", search_pattern)
 
         # Match the built pattern against the whole path and collect the named groups.
         matched = re.fullmatch(search_pattern, path)
