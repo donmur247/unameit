@@ -3,10 +3,11 @@
 tokens:
   root:
     default: /projects
+    pattern: "[a-zA-Z0-9-]"
   project:
     pattern: "[a-zA-Z0-9-]"
 
 templates:
-  project_root: $root/$project
   # Template with empty value, treated as not found by build_path()
   empty_template: ""
+  project_root: $root/$project

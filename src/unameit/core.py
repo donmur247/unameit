@@ -113,3 +113,58 @@ class UNameIt:
                 result = result.replace(f"${token}", str(payload[token]))
 
         return result
+
+    def extract_path(self, template_name: str, path: str) -> dict[str, Any]:
+        """Extract tokens from an input path and return a dictionary with matching tokens and values.
+        Tokens are extracted from the path using the template tokens defined in the config.
+        For example `/project/superdude` where the template name used is `$root/$project`
+        returns `{"root": "project", "project": "superdude"}`.
+
+        Args:
+            template_name (str): The name of the template to use for extracting tokens.
+            path (str): The input path to unpack.
+
+        Returns:
+            dict[str, Any]: A dictionary mapping tokens to their unpacked values.
+                Empty dictionary if the template is not found or the path doesn't match
+                the template.
+        """
+        result: dict[str, Any] = {}
+        template = self._templates.get(template_name)
+        if not template:
+            return result
+
+        # Token values may carry their own leading slash (e.g. a default of `/projects`),
+        # so align the path with the template structure before matching.
+        if not template.startswith("/"):
+            path = path.removeprefix("/")
+
+        # Build a regular expression from the template: literal parts are escaped and
+        # matched verbatim, while each token becomes a named group using the pattern set
+        # in the config (matched one or more times), falling back to any non-empty path
+        # segment when the token defines no pattern.
+        search_pattern = ""
+        seen = set()
+        pos = 0
+        for match in re.finditer(r"\$(\w+)", template):
+            search_pattern += re.escape(template[pos : match.start()])
+            token = match.group(1)
+            if token in seen:
+                # Repeated token: use a backreference so it must match the same value.
+                search_pattern += f"(?P={token})"
+            else:
+                seen.add(token)
+                token_conf = self._tokens.get(token)
+                if token_conf is not None and "pattern" in token_conf:
+                    search_pattern += f"(?P<{token}>(?:{token_conf.pattern})+)"
+                else:
+                    search_pattern += f"(?P<{token}>[^/]+)"
+            pos = match.end()
+        search_pattern += re.escape(template[pos:])
+
+        # Match the built pattern against the whole path and collect the named groups.
+        matched = re.fullmatch(search_pattern, path)
+        if matched:
+            result = matched.groupdict()
+
+        return result

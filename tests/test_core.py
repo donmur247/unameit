@@ -156,3 +156,54 @@ def test_unameit_build_path_empty_template_name_returns_none(unameit_config: UNa
 def test_unameit_build_path_empty_template_value_returns_none(unameit_config: UNameIt):
     """Test build_path() returns None for a template defined with an empty value."""
     assert unameit_config.build_path("empty_template", {"project": "myproj"}) is None
+
+
+def test_unameit_extract_path_project_root(unameit_config: UNameIt):
+    """Test extract_path() unpacks tokens from a path built by build_path()."""
+    path = unameit_config.build_path("project_root", {"project": "GODZILLA"})
+    assert unameit_config.extract_path("project_root", path) == {
+        "root": "projects",
+        "project": "GODZILLA",
+    }
+
+
+def test_unameit_extract_path_project_root_docstring_example(unameit_config: UNameIt):
+    """Test extract_path() matches the example in its docstring."""
+    assert unameit_config.extract_path("project_root", "/project/superdude") == {
+        "root": "project",
+        "project": "superdude",
+    }
+
+
+def test_unameit_extract_path_unknown_template_returns_empty(unameit_config: UNameIt):
+    """Test extract_path() returns empty dict for a nonexistent template name."""
+    assert unameit_config.extract_path("nonexistent", "/projects/GODZILLA") == {}
+
+
+def test_unameit_extract_path_empty_template_value_returns_empty(unameit_config: UNameIt):
+    """Test extract_path() returns empty dict for a template with an empty value."""
+    assert unameit_config.extract_path("empty_template", "/projects/GODZILLA") == {}
+
+
+def test_unameit_extract_path_extra_segments_returns_empty(unameit_config: UNameIt):
+    """Test extract_path() returns empty dict when the path has extra segments."""
+    assert unameit_config.extract_path("project_root", "/projects/GODZILLA/extra") == {}
+
+
+def test_unameit_extract_path_missing_segments_returns_empty(unameit_config: UNameIt):
+    """Test extract_path() returns empty dict when the path has missing segments."""
+    assert unameit_config.extract_path("project_root", "/projects") == {}
+
+
+def test_unameit_extract_path_pattern_mismatch_returns_empty(unameit_config: UNameIt):
+    """Test extract_path() returns empty dict when a value violates the token pattern."""
+    assert unameit_config.extract_path("project_root", "/projects/GOD ZILLA") == {}
+
+
+def test_unameit_extract_path_token_without_pattern_falls_back(unameit_config: UNameIt):
+    """Test extract_path() matches any path segment for tokens without a pattern."""
+    unameit_config._templates["episode"] = "$root/$episode"
+    assert unameit_config.extract_path("episode", "/projects/e01") == {
+        "root": "projects",
+        "episode": "e01",
+    }
