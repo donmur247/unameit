@@ -7,6 +7,7 @@ from typing import Any
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from unameit.log import Logger
+from unameit.util import find_tokens_from_template
 
 logger = Logger(__name__)
 
@@ -71,6 +72,49 @@ class UNameIt:
         if "tokens" not in sections:
             raise ValueError("No tokens section in config")
 
+    def _replace_tokens_with_defaults(
+        self, template: str, tokens: list[Any], payload: dict[str, Any]
+    ) -> str:
+        """Replace collected tokens with default values for each token match in config.
+        Tokens provided by payload are skipped here, as payload values
+        take precedence over defaults.
+
+        Args:
+            template (str): Template string to replace tokens in.
+            tokens (list[Any]): List of tokens to replace in template.
+            payload (dict[str, Any]): Dictionary of token values to replace with.
+
+        Returns:
+            str: Template string with tokens replaced by default values.
+        """
+        result = template
+        for token in tokens:
+            if token in payload:
+                continue
+            token_conf = self._tokens.get(token)
+            if token_conf is not None and "default" in token_conf:
+                result = result.replace(f"${token}", str(token_conf.default))
+        return result
+
+    def _replace_tokens_with_payload(
+        self, template: str, tokens: list[str], payload: dict[str, Any]
+    ) -> str:
+        """Replace tokens in template with values from payload.
+
+        Args:
+            template (str): Template string to replace tokens in.
+            tokens (list[str]): List of tokens to replace.
+            payload (dict[str, Any]): Dictionary of token values to replace with.
+
+        Returns:
+            str: Template string with tokens replaced by payload values.
+        """
+        result = template
+        for token in tokens:
+            if token in payload:
+                result = result.replace(f"${token}", str(payload[token]))
+        return result
+
     def load(self, config_file: str) -> None:
         """Load config from provided config file.
 
@@ -96,33 +140,18 @@ class UNameIt:
             str | None: Full path of built template, or None if template not found.
         """
         template = self._templates.get(template_name)
-        if not template:
+        if not template or not isinstance(template, str):
             return None
 
-        # Get tokens from template. Tokens are started with `$`. For example
-        # `$root/$project/some/path/$filename.$ext` yields root, project, filename, ext.
-        # Longer tokens are substituted first to avoid prefix collisions (e.g. `$root`
-        # clobbering `$root_dir`).
-        tokens = sorted(set(re.findall(r"\$([\w]+)", template)), key=len, reverse=True)
+        tokens = find_tokens_from_template(template)
+        if not tokens:
+            return None
         logger.debug("Build tokens: %s", tokens)
 
-        result = template
-
-        # First pass: replace each token with corresponding default value found from
-        # self._tokens. Tokens provided by payload are skipped here, as payload values
-        # take precedence over defaults.
-        for token in tokens:
-            if token in payload:
-                continue
-            token_conf = self._tokens.get(token)
-            if token_conf is not None and "default" in token_conf:
-                result = result.replace(f"${token}", str(token_conf.default))
+        result = self._replace_tokens_with_defaults(template, tokens, payload)
         logger.debug("Build first pass result: %s", result)
 
-        # Second pass: replace tokens with matching values from payload.
-        for token in tokens:
-            if token in payload:
-                result = result.replace(f"${token}", str(payload[token]))
+        result = self._replace_tokens_with_payload(result, tokens, payload)
         logger.debug("Build second pass result: %s", result)
 
         return result
