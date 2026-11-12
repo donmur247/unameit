@@ -3,7 +3,11 @@
 tokens:
   root:
     default: /projects
-    pattern: "[a-zA-Z0-9-]"
+    # Root per OS. Only the current OS entry is used; `default` is used when it's missing.
+    os:
+      linux: "${tokens.root.default}"
+      windows: "P:"
+      macos: "${tokens.root.default}"
   project:
     pattern: "[a-zA-Z0-9-]"
 

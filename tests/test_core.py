@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from omegaconf import OmegaConf
 
+from unameit import core
 from unameit.core import UNameIt
 
 
@@ -25,6 +26,22 @@ def unameit_config(unameit_obj: UNameIt):
     """Return unameit object with loaded configuration."""
     unameit_obj.load("basics.yml")
     return unameit_obj
+
+
+@pytest.fixture()
+def set_os(monkeypatch: pytest.MonkeyPatch):
+    """Return a helper that pins the OS name UNameIt sees for the test."""
+
+    def _set(os_name: str) -> None:
+        monkeypatch.setattr(core, "current_os", lambda: os_name)
+
+    return _set
+
+
+@pytest.fixture(autouse=True)
+def linux_os(set_os) -> None:
+    """Pin the OS to linux so the suite gives the same results on every host."""
+    set_os("linux")
 
 
 def test_unameit_obj(unameit_obj: UNameIt, config_dir: Path):
@@ -162,15 +179,15 @@ def test_unameit_extract_path_project_root(unameit_config: UNameIt):
     """Test extract_path() unpacks tokens from a path built by build_path()."""
     path = unameit_config.build_path("project_root", {"project": "GODZILLA"})
     assert unameit_config.extract_path("project_root", path) == {
-        "root": "projects",
+        "root": "/projects",
         "project": "GODZILLA",
     }
 
 
 def test_unameit_extract_path_project_root_docstring_example(unameit_config: UNameIt):
     """Test extract_path() matches the example in its docstring."""
-    assert unameit_config.extract_path("project_root", "/project/superdude") == {
-        "root": "project",
+    assert unameit_config.extract_path("project_root", "/projects/superdude") == {
+        "root": "/projects",
         "project": "superdude",
     }
 
@@ -180,7 +197,9 @@ def test_unameit_extract_path_unknown_template_returns_empty(unameit_config: UNa
     assert unameit_config.extract_path("nonexistent", "/projects/GODZILLA") == {}
 
 
-def test_unameit_extract_path_empty_template_value_returns_empty(unameit_config: UNameIt):
+def test_unameit_extract_path_empty_template_value_returns_empty(
+    unameit_config: UNameIt,
+):
     """Test extract_path() returns empty dict for a template with an empty value."""
     assert unameit_config.extract_path("empty_template", "/projects/GODZILLA") == {}
 
@@ -204,6 +223,145 @@ def test_unameit_extract_path_token_without_pattern_falls_back(unameit_config: U
     """Test extract_path() matches any path segment for tokens without a pattern."""
     unameit_config._templates["episode"] = "$root/$episode"
     assert unameit_config.extract_path("episode", "/projects/e01") == {
-        "root": "projects",
+        "root": "/projects",
         "episode": "e01",
     }
+
+
+@pytest.mark.parametrize(
+    ("os_name", "expected"),
+    [
+        ("linux", "/projects/GODZILLA"),
+        ("macos", "/projects/GODZILLA"),
+        ("windows", "P:/GODZILLA"),
+        ("freebsd", "/projects/GODZILLA"),  # no matching key, falls back to default
+    ],
+)
+def test_unameit_build_path_root_per_os(
+    unameit_config: UNameIt, set_os, os_name: str, expected: str
+):
+    """Test build_path() uses the root for the current OS, or default if none is set."""
+    set_os(os_name)
+    assert (
+        unameit_config.build_path("project_root", {"project": "GODZILLA"}) == expected
+    )
+
+
+def test_unameit_build_path_payload_overrides_os_root(unameit_config: UNameIt, set_os):
+    """Test payload root takes precedence over the OS-specific root."""
+    set_os("windows")
+    result = unameit_config.build_path(
+        "project_root", {"root": "/shows", "project": "GODZILLA"}
+    )
+    assert result == "/shows/GODZILLA"
+
+
+@pytest.mark.parametrize(
+    ("root", "expected"),
+    [
+        ("P:", "P:/GODZILLA"),
+        ("P:/", "P:/GODZILLA"),
+        ("P://", "P:/GODZILLA"),
+        ("//server/share", "//server/share/GODZILLA"),
+        ("", "/GODZILLA"),
+        ("/", "/GODZILLA"),
+    ],
+)
+def test_unameit_build_path_os_root_slashes(
+    unameit_config: UNameIt, set_os, root: str, expected: str
+):
+    """Test extra slashes at the root/template boundary are removed, UNC kept."""
+    set_os("windows")
+    unameit_config._tokens.root.os.windows = root
+    assert (
+        unameit_config.build_path("project_root", {"project": "GODZILLA"}) == expected
+    )
+
+
+def test_unameit_build_path_null_os_value_falls_back_to_default(
+    unameit_config: UNameIt, set_os
+):
+    """Test a null OS value is treated as unset and falls back to default."""
+    set_os("linux")
+    unameit_config._tokens.root.os.linux = None
+    assert unameit_config.build_path("project_root", {"project": "GODZILLA"}) == (
+        "/projects/GODZILLA"
+    )
+
+
+def test_unameit_extract_path_windows_root(unameit_config: UNameIt, set_os):
+    """Test extract_path() matches the root for the current OS (windows)."""
+    set_os("windows")
+    assert unameit_config.extract_path("project_root", "P:/GODZILLA") == {
+        "root": "P:",
+        "project": "GODZILLA",
+    }
+
+
+def test_unameit_extract_path_other_os_root_not_matched(unameit_config: UNameIt):
+    """Test extract_path() only matches the current OS root (linux here)."""
+    assert unameit_config.extract_path("project_root", "P:/GODZILLA") == {}
+
+
+def test_unameit_extract_path_empty_os_root(unameit_config: UNameIt, set_os):
+    """Test extract_path() matches an empty root."""
+    set_os("linux")
+    unameit_config._tokens.root.os.linux = ""
+    assert unameit_config.extract_path("project_root", "/GODZILLA") == {
+        "root": "",
+        "project": "GODZILLA",
+    }
+
+
+@pytest.mark.parametrize("os_name", ["linux", "macos", "windows"])
+def test_unameit_build_extract_round_trip(
+    unameit_config: UNameIt, set_os, os_name: str
+):
+    """Test extracting a built path and building again gives the same path."""
+    set_os(os_name)
+    path = unameit_config.build_path("project_root", {"project": "GODZILLA"})
+    data = unameit_config.extract_path("project_root", path)
+    assert unameit_config.build_path("project_root", data) == path
+
+
+def _set_tokens(unameit_obj: UNameIt, tokens: dict) -> None:
+    """Replace the loaded config with one using the given tokens section."""
+    unameit_obj._conf = OmegaConf.create(
+        {"tokens": tokens, "templates": {"project_root": "$root/$project"}}
+    )
+
+
+def test_unameit_validate_token_not_mapping(unameit_obj: UNameIt):
+    """Test ValueError when a token is not a mapping."""
+    _set_tokens(unameit_obj, {"root": "/projects"})
+    with pytest.raises(TypeError, match="Token 'root' must be a mapping"):
+        unameit_obj._validate()
+
+
+def test_unameit_validate_os_not_mapping(unameit_obj: UNameIt):
+    """Test ValueError when `os` is not a mapping."""
+    _set_tokens(unameit_obj, {"root": {"os": "P:"}})
+    with pytest.raises(TypeError, match="'os' of token 'root' must be a mapping"):
+        unameit_obj._validate()
+
+
+def test_unameit_validate_unknown_os_key(unameit_obj: UNameIt):
+    """Test ValueError for an unknown OS key, such as a typo."""
+    _set_tokens(unameit_obj, {"root": {"os": {"windoes": "P:"}}})
+    with pytest.raises(ValueError, match="Unknown OS 'windoes'"):
+        unameit_obj._validate()
+
+
+def test_unameit_validate_os_value_not_string(unameit_obj: UNameIt):
+    """Test ValueError when an OS value is not a string."""
+    _set_tokens(unameit_obj, {"root": {"os": {"windows": 123}}})
+    with pytest.raises(ValueError, match="must be a string"):
+        unameit_obj._validate()
+
+
+def test_unameit_validate_os_allows_empty_and_null(unameit_obj: UNameIt):
+    """Test empty and null OS values are accepted."""
+    _set_tokens(
+        unameit_obj, {"root": {"os": {"linux": "", "windows": "P:", "macos": None}}}
+    )
+    assert unameit_obj._validate() is None
