@@ -176,7 +176,9 @@ class UNameIt:
                 result = substitute_token(result, token, str(payload[token]))
         return result
 
-    def _build_search_pattern_from_template(self, template: str) -> str:
+    def _build_search_pattern_from_template(
+        self, template: str, end: int | None = None
+    ) -> str:
         """Build search pattern from template string.
 
         Literal parts are escaped and matched verbatim. Path roots (tokens defining `os`)
@@ -187,14 +189,19 @@ class UNameIt:
 
         Args:
             template (str): Template string to build pattern from.
+            end (int | None): Position in template to stop at (exclusive). Defaults to the
+                whole template.
 
         Returns:
             str: Search pattern string.
         """
+        end = len(template) if end is None else end
         search_pattern = ""
         seen = set()
         pos = 0
         for match in re.finditer(r"\$(\w+)", template):
+            if match.start() >= end:
+                break
             search_pattern += re.escape(template[pos : match.start()])
             token = match.group(1)
             if token in seen:
@@ -204,7 +211,7 @@ class UNameIt:
                 seen.add(token)
                 search_pattern += self._token_group(token, template, match)
             pos = match.end()
-        search_pattern += re.escape(template[pos:])
+        search_pattern += re.escape(template[pos:end])
         return search_pattern
 
     def _token_group(self, token: str, template: str, match: re.Match[str]) -> str:
@@ -271,7 +278,9 @@ class UNameIt:
 
         return result
 
-    def extract_path(self, template_name: str, path: str) -> dict[str, Any]:
+    def extract_path(
+        self, template_name: str, path: str, exact: bool = True
+    ) -> dict[str, Any]:
         """Extract tokens from an input path and return a dictionary with matching tokens and values.
 
         Tokens are extracted from the path using the template tokens defined in the config.
@@ -283,23 +292,49 @@ class UNameIt:
         Args:
             template_name (str): The name of the template to use for extracting tokens.
             path (str): The input path to unpack.
+            exact (bool, optional): If True, the whole path must match the template. If False,
+                the longest leading part of the template that matches the path is extracted.
+                Path elements left over, or from the first mismatch onward, are returned as a
+                list of strings under `not_matched`. Defaults to True.
 
         Returns:
             dict[str, Any]: A dictionary mapping tokens to their unpacked values.
-                Empty dictionary if the template is not found or the path doesn't match
-                the template.
+                Empty dictionary if the template is not found, or if `exact` is True and the
+                path doesn't match the template. When `exact` is False, the dictionary always
+                has a `not_matched` key.
         """
+        search_pattern: str = ""
         result: dict[str, Any] = {}
         template = self._templates.get(template_name)
         if not template:
             return result
 
-        search_pattern = self._build_search_pattern_from_template(template)
+        if exact:
+            search_pattern = self._build_search_pattern_from_template(template)
+            logger.debug("Extract pattern: %s", search_pattern)
+
+            # Match the built pattern against the whole path and collect the named groups.
+            matched = re.fullmatch(search_pattern, path)
+            if matched:
+                result = matched.groupdict()
+            return result
+
+        # Try the longest template prefix first. Prefixes end at a template "/" separator (or at
+        # the end of the template), and the match must be followed by "/" or the end of the path,
+        # so a token never matches part of a path element.
+        cuts = [i for i, char in enumerate(template) if char == "/" and i > 0]
+        cuts.append(len(template))
+        matched: re.Match[str] | None = None
+        for cut in reversed(cuts):
+            search_pattern = self._build_search_pattern_from_template(template, cut)
+            matched = re.match(search_pattern + r"(?=/|\Z)", path)
+            if matched:
+                break
         logger.debug("Extract pattern: %s", search_pattern)
 
-        # Match the built pattern against the whole path and collect the named groups.
-        matched = re.fullmatch(search_pattern, path)
+        remainder = path
         if matched:
             result = matched.groupdict()
-
+            remainder = path[matched.end() :]
+        result["not_matched"] = [part for part in remainder.split("/") if part]
         return result

@@ -47,7 +47,7 @@ def test_strip_boundary_slashes(
         ("$root/$project", "root", "P:/", "P:/$project"),
         ("$root/$project", "root", "P://", "P:/$project"),
         ("/$root/$project", "root", "/projects", "/projects/$project"),
-        ("$root/$project", "project", "GODZILLA", "$root/GODZILLA"),
+        ("$root/$project", "project", "MYPUPPIES", "$root/MYPUPPIES"),
         ("$root$project", "root", "P:/", "P:/$project"),
         ("$root_dir/$root", "root", "/projects", "$root_dir/projects"),
         ("$root_dir/$root", "root_dir", "/x", "/x/$root"),

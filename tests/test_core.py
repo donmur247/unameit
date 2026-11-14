@@ -177,10 +177,10 @@ def test_unameit_build_path_empty_template_value_returns_none(unameit_config: UN
 
 def test_unameit_extract_path_project_root(unameit_config: UNameIt):
     """Test extract_path() unpacks tokens from a path built by build_path()."""
-    path = unameit_config.build_path("project_root", {"project": "GODZILLA"})
+    path = unameit_config.build_path("project_root", {"project": "MYPUPPIES"})
     assert unameit_config.extract_path("project_root", path) == {
         "root": "/projects",
-        "project": "GODZILLA",
+        "project": "MYPUPPIES",
     }
 
 
@@ -194,19 +194,19 @@ def test_unameit_extract_path_project_root_docstring_example(unameit_config: UNa
 
 def test_unameit_extract_path_unknown_template_returns_empty(unameit_config: UNameIt):
     """Test extract_path() returns empty dict for a nonexistent template name."""
-    assert unameit_config.extract_path("nonexistent", "/projects/GODZILLA") == {}
+    assert unameit_config.extract_path("nonexistent", "/projects/MYPUPPIES") == {}
 
 
 def test_unameit_extract_path_empty_template_value_returns_empty(
     unameit_config: UNameIt,
 ):
     """Test extract_path() returns empty dict for a template with an empty value."""
-    assert unameit_config.extract_path("empty_template", "/projects/GODZILLA") == {}
+    assert unameit_config.extract_path("empty_template", "/projects/MYPUPPIES") == {}
 
 
 def test_unameit_extract_path_extra_segments_returns_empty(unameit_config: UNameIt):
     """Test extract_path() returns empty dict when the path has extra segments."""
-    assert unameit_config.extract_path("project_root", "/projects/GODZILLA/extra") == {}
+    assert unameit_config.extract_path("project_root", "/projects/MYPUPPIES/extra") == {}
 
 
 def test_unameit_extract_path_missing_segments_returns_empty(unameit_config: UNameIt):
@@ -216,7 +216,7 @@ def test_unameit_extract_path_missing_segments_returns_empty(unameit_config: UNa
 
 def test_unameit_extract_path_pattern_mismatch_returns_empty(unameit_config: UNameIt):
     """Test extract_path() returns empty dict when a value violates the token pattern."""
-    assert unameit_config.extract_path("project_root", "/projects/GOD ZILLA") == {}
+    assert unameit_config.extract_path("project_root", "/projects/MY PUPPIES") == {}
 
 
 def test_unameit_extract_path_token_without_pattern_falls_back(unameit_config: UNameIt):
@@ -228,13 +228,123 @@ def test_unameit_extract_path_token_without_pattern_falls_back(unameit_config: U
     }
 
 
+def test_unameit_extract_path_not_exact_extra_elements(unameit_config: UNameIt):
+    """Test exact=False extracts matched tokens and lists leftover path elements."""
+    result = unameit_config.extract_path(
+        "project_root", "/projects/MYPUPPIES/extra/more", exact=False
+    )
+    assert result == {
+        "root": "/projects",
+        "project": "MYPUPPIES",
+        "not_matched": ["extra", "more"],
+    }
+
+
+def test_unameit_extract_path_not_exact_full_match_empty_not_matched(
+    unameit_config: UNameIt,
+):
+    """Test exact=False on a full match returns an empty not_matched list."""
+    result = unameit_config.extract_path(
+        "project_root", "/projects/MYPUPPIES", exact=False
+    )
+    assert result == {
+        "root": "/projects",
+        "project": "MYPUPPIES",
+        "not_matched": [],
+    }
+
+
+def test_unameit_extract_path_not_exact_missing_segments(unameit_config: UNameIt):
+    """Test exact=False returns only the tokens that were found."""
+    result = unameit_config.extract_path("project_root", "/projects", exact=False)
+    assert result == {"root": "/projects", "not_matched": []}
+
+
+def test_unameit_extract_path_not_exact_pattern_mismatch(unameit_config: UNameIt):
+    """Test exact=False keeps the root and reports the invalid element as not matched."""
+    result = unameit_config.extract_path(
+        "project_root", "/projects/MY PUPPIES", exact=False
+    )
+    assert result == {"root": "/projects", "not_matched": ["MY PUPPIES"]}
+
+
+def test_unameit_extract_path_not_exact_root_mismatch(unameit_config: UNameIt):
+    """Test exact=False with no matching prefix returns all elements as not matched."""
+    result = unameit_config.extract_path(
+        "project_root", "/shows/MYPUPPIES", exact=False
+    )
+    assert result == {"not_matched": ["shows", "MYPUPPIES"]}
+
+
+def test_unameit_extract_path_not_exact_stops_at_middle_mismatch(
+    unameit_config: UNameIt,
+):
+    """Test exact=False stops at the first mismatch, so later tokens are not extracted."""
+    unameit_config._templates["shot_path"] = "$root/$project/shots/$shot"
+    result = unameit_config.extract_path(
+        "shot_path", "/projects/MYPUPPIES/comp/sh010", exact=False
+    )
+    assert result == {
+        "root": "/projects",
+        "project": "MYPUPPIES",
+        "not_matched": ["comp", "sh010"],
+    }
+
+
+def test_unameit_extract_path_not_exact_trailing_separator(unameit_config: UNameIt):
+    """Test a trailing separator is not reported as a not matched element."""
+    result = unameit_config.extract_path(
+        "project_root", "/projects/MYPUPPIES/", exact=False
+    )
+    assert result == {
+        "root": "/projects",
+        "project": "MYPUPPIES",
+        "not_matched": [],
+    }
+
+
+def test_unameit_extract_path_not_exact_windows_root(unameit_config: UNameIt, set_os):
+    """Test exact=False uses the root for the current OS."""
+    set_os("windows")
+    result = unameit_config.extract_path(
+        "project_root", "P:/MYPUPPIES/extra", exact=False
+    )
+    assert result == {
+        "root": "P:",
+        "project": "MYPUPPIES",
+        "not_matched": ["extra"],
+    }
+
+
+def test_unameit_extract_path_not_exact_unknown_template_returns_empty(
+    unameit_config: UNameIt,
+):
+    """Test exact=False still returns empty dict for a nonexistent template."""
+    assert (
+        unameit_config.extract_path("nonexistent", "/projects/MYPUPPIES", exact=False)
+        == {}
+    )
+
+
+def test_unameit_extract_path_exact_true_returns_empty_on_extra_elements(
+    unameit_config: UNameIt,
+):
+    """Test exact=True returns empty dict when the path has extra elements."""
+    assert (
+        unameit_config.extract_path(
+            "project_root", "/projects/MYPUPPIES/extra", exact=True
+        )
+        == {}
+    )
+
+
 @pytest.mark.parametrize(
     ("os_name", "expected"),
     [
-        ("linux", "/projects/GODZILLA"),
-        ("macos", "/projects/GODZILLA"),
-        ("windows", "P:/GODZILLA"),
-        ("freebsd", "/projects/GODZILLA"),  # no matching key, falls back to default
+        ("linux", "/projects/MYPUPPIES"),
+        ("macos", "/projects/MYPUPPIES"),
+        ("windows", "P:/MYPUPPIES"),
+        ("freebsd", "/projects/MYPUPPIES"),  # no matching key, falls back to default
     ],
 )
 def test_unameit_build_path_root_per_os(
@@ -243,7 +353,7 @@ def test_unameit_build_path_root_per_os(
     """Test build_path() uses the root for the current OS, or default if none is set."""
     set_os(os_name)
     assert (
-        unameit_config.build_path("project_root", {"project": "GODZILLA"}) == expected
+        unameit_config.build_path("project_root", {"project": "MYPUPPIES"}) == expected
     )
 
 
@@ -251,20 +361,20 @@ def test_unameit_build_path_payload_overrides_os_root(unameit_config: UNameIt, s
     """Test payload root takes precedence over the OS-specific root."""
     set_os("windows")
     result = unameit_config.build_path(
-        "project_root", {"root": "/shows", "project": "GODZILLA"}
+        "project_root", {"root": "/shows", "project": "MYPUPPIES"}
     )
-    assert result == "/shows/GODZILLA"
+    assert result == "/shows/MYPUPPIES"
 
 
 @pytest.mark.parametrize(
     ("root", "expected"),
     [
-        ("P:", "P:/GODZILLA"),
-        ("P:/", "P:/GODZILLA"),
-        ("P://", "P:/GODZILLA"),
-        ("//server/share", "//server/share/GODZILLA"),
-        ("", "/GODZILLA"),
-        ("/", "/GODZILLA"),
+        ("P:", "P:/MYPUPPIES"),
+        ("P:/", "P:/MYPUPPIES"),
+        ("P://", "P:/MYPUPPIES"),
+        ("//server/share", "//server/share/MYPUPPIES"),
+        ("", "/MYPUPPIES"),
+        ("/", "/MYPUPPIES"),
     ],
 )
 def test_unameit_build_path_os_root_slashes(
@@ -274,7 +384,7 @@ def test_unameit_build_path_os_root_slashes(
     set_os("windows")
     unameit_config._tokens.root.os.windows = root
     assert (
-        unameit_config.build_path("project_root", {"project": "GODZILLA"}) == expected
+        unameit_config.build_path("project_root", {"project": "MYPUPPIES"}) == expected
     )
 
 
@@ -284,32 +394,32 @@ def test_unameit_build_path_null_os_value_falls_back_to_default(
     """Test a null OS value is treated as unset and falls back to default."""
     set_os("linux")
     unameit_config._tokens.root.os.linux = None
-    assert unameit_config.build_path("project_root", {"project": "GODZILLA"}) == (
-        "/projects/GODZILLA"
+    assert unameit_config.build_path("project_root", {"project": "MYPUPPIES"}) == (
+        "/projects/MYPUPPIES"
     )
 
 
 def test_unameit_extract_path_windows_root(unameit_config: UNameIt, set_os):
     """Test extract_path() matches the root for the current OS (windows)."""
     set_os("windows")
-    assert unameit_config.extract_path("project_root", "P:/GODZILLA") == {
+    assert unameit_config.extract_path("project_root", "P:/MYPUPPIES") == {
         "root": "P:",
-        "project": "GODZILLA",
+        "project": "MYPUPPIES",
     }
 
 
 def test_unameit_extract_path_other_os_root_not_matched(unameit_config: UNameIt):
     """Test extract_path() only matches the current OS root (linux here)."""
-    assert unameit_config.extract_path("project_root", "P:/GODZILLA") == {}
+    assert unameit_config.extract_path("project_root", "P:/MYPUPPIES") == {}
 
 
 def test_unameit_extract_path_empty_os_root(unameit_config: UNameIt, set_os):
     """Test extract_path() matches an empty root."""
     set_os("linux")
     unameit_config._tokens.root.os.linux = ""
-    assert unameit_config.extract_path("project_root", "/GODZILLA") == {
+    assert unameit_config.extract_path("project_root", "/MYPUPPIES") == {
         "root": "",
-        "project": "GODZILLA",
+        "project": "MYPUPPIES",
     }
 
 
@@ -319,7 +429,7 @@ def test_unameit_build_extract_round_trip(
 ):
     """Test extracting a built path and building again gives the same path."""
     set_os(os_name)
-    path = unameit_config.build_path("project_root", {"project": "GODZILLA"})
+    path = unameit_config.build_path("project_root", {"project": "MYPUPPIES"})
     data = unameit_config.extract_path("project_root", path)
     assert unameit_config.build_path("project_root", data) == path
 
