@@ -43,17 +43,30 @@ def test_strip_boundary_slashes(
 @pytest.mark.parametrize(
     ("text", "token", "value", "expected"),
     [
-        ("$root/$project", "root", "/projects", "/projects/$project"),
-        ("$root/$project", "root", "P:/", "P:/$project"),
-        ("$root/$project", "root", "P://", "P:/$project"),
-        ("/$root/$project", "root", "/projects", "/projects/$project"),
-        ("$root/$project", "project", "MYPUPPIES", "$root/MYPUPPIES"),
-        ("$root$project", "root", "P:/", "P:/$project"),
-        ("$root_dir/$root", "root", "/projects", "$root_dir/projects"),
-        ("$root_dir/$root", "root_dir", "/x", "/x/$root"),
+        ("@root/@project", "root", "/projects", "/projects/@project"),
+        ("@root/@project", "root", "P:/", "P:/@project"),
+        ("@root/@project", "root", "P://", "P:/@project"),
+        ("/@root/@project", "root", "/projects", "/projects/@project"),
+        ("@root/@project", "project", "MYPUPPIES", "@root/MYPUPPIES"),
+        ("@root@project", "root", "P:/", "P:/@project"),
+        ("@root_dir/@root", "root", "/projects", "@root_dir/projects"),
+        ("@root_dir/@root", "root_dir", "/x", "/x/@root"),
         ("no tokens here", "root", "x", "no tokens here"),
     ],
 )
 def test_substitute_token(text: str, token: str, value: str, expected: str):
     """Test whole-token replacement with slashes normalized at template boundaries."""
     assert util.substitute_token(text, token, value) == expected
+
+
+def test_find_tokens_from_template():
+    """Test tokens are found by the @ prefix, longest first, and $ is not a token."""
+    template = "@root/@project/some/path/@filename.@ext"
+    assert util.find_tokens_from_template(template) == [
+        "filename",
+        "project",
+        "root",
+        "ext",
+    ]
+    assert util.find_tokens_from_template("$root/$project") == []
+    assert util.find_tokens_from_template("${templates.project_root}/assets") == []

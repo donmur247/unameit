@@ -9,6 +9,7 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 from unameit.log import Logger
 from unameit.util import (
     OS_KEYS,
+    TOKEN_PATTERN,
     current_os,
     find_tokens_from_template,
     strip_boundary_slashes,
@@ -199,7 +200,7 @@ class UNameIt:
         search_pattern = ""
         seen = set()
         pos = 0
-        for match in re.finditer(r"\$(\w+)", template):
+        for match in TOKEN_PATTERN.finditer(template):
             if match.start() >= end:
                 break
             search_pattern += re.escape(template[pos : match.start()])
@@ -220,7 +221,7 @@ class UNameIt:
         Args:
             token (str): Token name.
             template (str): Template the occurrence belongs to.
-            match (re.Match[str]): Match of the `$token` occurrence in template.
+            match (re.Match[str]): Match of the `@token` occurrence in template.
 
         Returns:
             str: Named group regex for the token.
@@ -303,7 +304,7 @@ class UNameIt:
 
         Tokens are extracted from the path using the template tokens defined in the config.
         Tokens that define `os` are path roots: they match their value for the current OS
-        (falling back to `default`). For example, on Linux with the `$root/$project` template
+        (falling back to `default`). For example, on Linux with the `@root/@project` template
         and root default `/projects`, `/projects/superdude` returns
         `{"root": "/projects", "project": "superdude"}`.
 

@@ -103,7 +103,7 @@ def test_unameit_validate_no_templates_section(unameit_obj: UNameIt):
 def test_unameit_validate_no_tokens_section(unameit_obj: UNameIt):
     """Test ValueError when config has no tokens section."""
     unameit_obj._conf = OmegaConf.create(
-        {"templates": {"project_root": "$root/$project"}}
+        {"templates": {"project_root": "@root/@project"}}
     )
     with pytest.raises(ValueError, match="No tokens section in config"):
         unameit_obj._validate()
@@ -133,13 +133,13 @@ def test_unameit_build_path_project_root_payload_overrides_default(
 def test_unameit_build_path_project_root_empty_payload(unameit_config: UNameIt):
     """Test build_path() with empty payload leaves token without default unresolved."""
     result = unameit_config.build_path("project_root", {})
-    assert result == "/projects/$project"
+    assert result == "/projects/@project"
 
 
 def test_unameit_build_path_project_root_missing_payload_token(unameit_config: UNameIt):
-    """Test build_path() leaves $project unresolved when payload doesn't provide it."""
+    """Test build_path() leaves @project unresolved when payload doesn't provide it."""
     result = unameit_config.build_path("project_root", {"root": "/shows"})
-    assert result == "/shows/$project"
+    assert result == "/shows/@project"
 
 
 def test_unameit_build_path_project_root_ignores_unknown_payload_keys(
@@ -266,7 +266,7 @@ def test_unameit_extract_path_pattern_mismatch_returns_empty(unameit_config: UNa
 
 def test_unameit_extract_path_token_without_pattern_falls_back(unameit_config: UNameIt):
     """Test extract_path() matches any path segment for tokens without a pattern."""
-    unameit_config._templates["episode"] = "$root/$episode"
+    unameit_config._templates["episode"] = "@root/@episode"
     assert unameit_config.extract_path("episode", "/projects/e01") == {
         "root": "/projects",
         "episode": "e01",
@@ -325,7 +325,7 @@ def test_unameit_extract_path_not_exact_stops_at_middle_mismatch(
     unameit_config: UNameIt,
 ):
     """Test exact=False stops at the first mismatch, so later tokens are not extracted."""
-    unameit_config._templates["shot_path"] = "$root/$project/shots/$shot"
+    unameit_config._templates["shot_path"] = "@root/@project/shots/@shot"
     result = unameit_config.extract_path(
         "shot_path", "/projects/MYPUPPIES/comp/sh010", exact=False
     )
@@ -482,7 +482,7 @@ def test_unameit_build_extract_round_trip(
 def _set_tokens(unameit_obj: UNameIt, tokens: dict) -> None:
     """Replace the loaded config with one using the given tokens section."""
     unameit_obj._conf = OmegaConf.create(
-        {"tokens": tokens, "templates": {"project_root": "$root/$project"}}
+        {"tokens": tokens, "templates": {"project_root": "@root/@project"}}
     )
 
 

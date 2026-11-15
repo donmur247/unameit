@@ -3,6 +3,13 @@
 import re
 import sys
 
+# Prefix that marks a token in templates, e.g. `@root/@project`. `@` is used instead of `$` so
+# tokens are easy to tell apart from OmegaConf's `${...}` interpolation in config files.
+TOKEN_PREFIX = "@"
+TOKEN_PATTERN = re.compile(rf"{re.escape(TOKEN_PREFIX)}(\w+)")
+# Same as TOKEN_PATTERN, but also captures a `/` directly after the token.
+_TOKEN_WITH_TRAIL_PATTERN = re.compile(rf"{re.escape(TOKEN_PREFIX)}(\w+)(/?)")
+
 # Maps sys.platform values to the keys accepted under a token's `os` mapping.
 OS_NAMES = {"win32": "windows", "linux": "linux", "darwin": "macos"}
 OS_KEYS = frozenset(OS_NAMES.values())
@@ -11,10 +18,9 @@ OS_KEYS = frozenset(OS_NAMES.values())
 def find_tokens_from_template(template: str) -> list[str]:
     """Find tokens from provided template.
 
-    Tokens are started with `$`. For example
-    `$root/$project/some/path/$filename.$ext` yields root, project, filename, ext.
-    Longer tokens are substituted first to avoid prefix collisions (e.g. `$root`
-    clobbering `$root_dir`).
+    Tokens are started with `@`. For example
+    `@root/@project/some/path/@filename.@ext` yields root, project, filename, ext.
+    Tokens are returned longest first.
 
     Args:
         template (str): Description.
@@ -22,8 +28,7 @@ def find_tokens_from_template(template: str) -> list[str]:
     Returns:
         list[str]: Description.
     """
-    pattern = r"\$([\w]+)"
-    return sorted(set(re.findall(pattern, template)), key=len, reverse=True)
+    return sorted(set(TOKEN_PATTERN.findall(template)), key=len, reverse=True)
 
 
 def current_os() -> str:
@@ -54,13 +59,13 @@ def strip_boundary_slashes(value: str, has_lead: bool, has_trail: bool) -> str:
 
 
 def substitute_token(text: str, token: str, value: str) -> str:
-    """Replace every `$token` in text with value, without doubling slashes.
+    """Replace every `@token` in text with value, without doubling slashes.
 
-    Only whole token names are matched, so `$root` doesn't match inside `$root_dir`.
+    Only whole token names are matched, so `@root` doesn't match inside `@root_dir`.
 
     Args:
         text (str): Text containing tokens.
-        token (str): Token name to replace (without `$`).
+        token (str): Token name to replace (without `@`).
         value (str): Value to substitute.
 
     Returns:
@@ -74,4 +79,4 @@ def substitute_token(text: str, token: str, value: str) -> str:
         has_lead = match.start() > 0 and text[match.start() - 1] == "/"
         return strip_boundary_slashes(value, has_lead, bool(trail)) + trail
 
-    return re.sub(r"\$(\w+)(/?)", replace, text)
+    return _TOKEN_WITH_TRAIL_PATTERN.sub(replace, text)

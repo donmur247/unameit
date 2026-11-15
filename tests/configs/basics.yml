@@ -1,4 +1,7 @@
 # Basic configuration template for UNameIt
+#
+# Tokens are written as `@name` and OmegaConf interpolations as `${...}`.
+# Quote template strings, since YAML doesn't allow a plain value to start with `@`.
 
 tokens:
   root:
@@ -29,20 +32,20 @@ tokens:
 templates:
   # Template with empty value, treated as not found by build_path()
   empty_template: ""
-  project_root: $root/$project
+  project_root: "@root/@project"
   assets:
-    root: ${templates.project_root}/assets
-    category_root: ${.root}/$asset_category
-    name_root: ${.category_root}/$asset_name
-    variant_root: ${.name_root}/$asset_variant
-    publish_root: ${.variant_root}/publish
-    work_root: ${.variant_root}/work
-    work_dcc_root: ${.work_root}/$dcc
+    root: "${templates.project_root}/assets"
+    category_root: "${.root}/@asset_category"
+    name_root: "${.category_root}/@asset_name"
+    variant_root: "${.name_root}/@asset_variant"
+    publish_root: "${.variant_root}/publish"
+    work_root: "${.variant_root}/work"
+    work_dcc_root: "${.work_root}/@dcc"
   shots:
-    root: ${templates.project_root}/shots
-    episode_root: ${.root}/$episode
-    sequence_root: ${.episode_root}/$sequence
-    shot_root: ${.sequence_root}/$shot
-    shot_publish_root: ${.shot_root}/publish
-    shot_work_root: ${.shot_root}/work
-    shot_work_dcc_root: ${.shot_work_root}/$dcc
+    root: "${templates.project_root}/shots"
+    episode_root: "${.root}/@episode"
+    sequence_root: "${.episode_root}/@sequence"
+    shot_root: "${.sequence_root}/@shot"
+    shot_publish_root: "${.shot_root}/publish"
+    shot_work_root: "${.shot_root}/work"
+    shot_work_dcc_root: "${.shot_work_root}/@dcc"
