@@ -192,6 +192,51 @@ def test_unameit_extract_path_project_root_docstring_example(unameit_config: UNa
     }
 
 
+def test_unameit_build_path_nested_template(unameit_config: UNameIt):
+    """Test build_path() resolves dotted names to nested templates."""
+    result = unameit_config.build_path("assets.root", {"project": "MYPUPPIES"})
+    assert result == "/projects/MYPUPPIES/assets"
+
+
+def test_unameit_build_path_nested_relative_interpolation(unameit_config: UNameIt):
+    """Test build_path() follows relative interpolations between nested templates."""
+    payload = {
+        "project": "MYPUPPIES",
+        "asset_category": "CHARACTERS",
+        "asset_name": "hero",
+    }
+    assert (
+        unameit_config.build_path("assets.category_root", payload)
+        == "/projects/MYPUPPIES/assets/CHARACTERS"
+    )
+    assert (
+        unameit_config.build_path("assets.name_root", payload)
+        == "/projects/MYPUPPIES/assets/CHARACTERS/hero"
+    )
+
+
+@pytest.mark.parametrize("name", ["assets", "assets.missing", "project_root.foo"])
+def test_unameit_build_path_non_template_name_returns_none(
+    unameit_config: UNameIt, name: str
+):
+    """Test build_path() returns None for section names and missing nested names."""
+    assert unameit_config.build_path(name, {"project": "MYPUPPIES"}) is None
+
+
+def test_unameit_extract_path_nested_template(unameit_config: UNameIt):
+    """Test extract_path() resolves dotted names to nested templates."""
+    result = unameit_config.extract_path("assets.root", "/projects/MYPUPPIES/assets")
+    assert result == {"root": "/projects", "project": "MYPUPPIES"}
+
+
+@pytest.mark.parametrize("name", ["", "assets", "assets.missing"])
+def test_unameit_extract_path_non_template_name_returns_empty(
+    unameit_config: UNameIt, name: str
+):
+    """Test extract_path() returns empty dict for empty, section, or missing names."""
+    assert unameit_config.extract_path(name, "/projects/MYPUPPIES") == {}
+
+
 def test_unameit_extract_path_unknown_template_returns_empty(unameit_config: UNameIt):
     """Test extract_path() returns empty dict for a nonexistent template name."""
     assert unameit_config.extract_path("nonexistent", "/projects/MYPUPPIES") == {}

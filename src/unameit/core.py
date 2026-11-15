@@ -237,6 +237,23 @@ class UNameIt:
             return f"(?P<{token}>(?:{token_conf.pattern})+)"
         return f"(?P<{token}>[^/]+)"
 
+    def _get_template(self, template_name: str) -> str | None:
+        """Return the template string for a template name.
+
+        Dots select nested templates, e.g. `assets.root`, and interpolations are resolved.
+
+        Args:
+            template_name (str): Template name to look up.
+
+        Returns:
+            str | None: The template string, or None if the name is empty, not found, or
+                doesn't refer to a string template.
+        """
+        if not template_name:
+            return None
+        template = OmegaConf.select(self._templates, template_name)
+        return template if isinstance(template, str) else None
+
     def load(self, config_file: str) -> None:
         """Load config from provided config file.
 
@@ -255,14 +272,15 @@ class UNameIt:
         """Build path from selected template and payload data.
 
         Args:
-            template_name (str): Template name to use.
+            template_name (str): Template name to use. Dots select nested templates, e.g.
+                `assets.root`.
             payload (dict[str, Any]): Data to use for template substitution.
 
         Returns:
             str | None: Full path of built template, or None if template not found.
         """
-        template = self._templates.get(template_name)
-        if not template or not isinstance(template, str):
+        template = self._get_template(template_name)
+        if not template:
             return None
 
         tokens = find_tokens_from_template(template)
@@ -291,6 +309,7 @@ class UNameIt:
 
         Args:
             template_name (str): The name of the template to use for extracting tokens.
+                Dots select nested templates, e.g. `assets.root`.
             path (str): The input path to unpack.
             exact (bool, optional): If True, the whole path must match the template. If False,
                 the longest leading part of the template that matches the path is extracted.
@@ -305,7 +324,7 @@ class UNameIt:
         """
         search_pattern: str = ""
         result: dict[str, Any] = {}
-        template = self._templates.get(template_name)
+        template = self._get_template(template_name)
         if not template:
             return result
 
