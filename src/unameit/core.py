@@ -13,7 +13,7 @@ from unameit.util import (
     current_os,
     find_tokens_from_template,
     strip_boundary_slashes,
-    substitute_token,
+    substitute_tokens,
 )
 
 logger = Logger(__name__)
@@ -136,10 +136,10 @@ class UNameIt:
     def _replace_tokens_with_defaults(
         self, template: str, tokens: list[str], payload: dict[str, Any]
     ) -> str:
-        """Replace collected tokens with default values for the current OS.
+        """Replace tokens in template with payload values, falling back to defaults.
 
-        Tokens provided by payload are skipped here, as payload values
-        take precedence over defaults.
+        Payload values take precedence over the defaults for the current OS. The template is
+        scanned once, so substituted values are never scanned for tokens again.
 
         Args:
             template (str): Template string to replace tokens in.
@@ -147,35 +147,17 @@ class UNameIt:
             payload (dict[str, Any]): Dictionary of token values to replace with.
 
         Returns:
-            str: Template string with tokens replaced by default values.
+            str: Template string with tokens replaced.
         """
-        result = template
+        values: dict[str, str] = {}
         for token in tokens:
             if token in payload:
-                continue
-            default = self._resolve_default(token)
-            if default is not None:
-                result = substitute_token(result, token, default)
-        return result
-
-    def _replace_tokens_with_payload(
-        self, template: str, tokens: list[str], payload: dict[str, Any]
-    ) -> str:
-        """Replace tokens in template with values from payload.
-
-        Args:
-            template (str): Template string to replace tokens in.
-            tokens (list[str]): List of tokens to replace.
-            payload (dict[str, Any]): Dictionary of token values to replace with.
-
-        Returns:
-            str: Template string with tokens replaced by payload values.
-        """
-        result = template
-        for token in tokens:
-            if token in payload:
-                result = substitute_token(result, token, str(payload[token]))
-        return result
+                values[token] = str(payload[token])
+            else:
+                default = self._resolve_default(token)
+                if default is not None:
+                    values[token] = default
+        return substitute_tokens(template, values)
 
     def _build_search_pattern_from_template(
         self, template: str, end: int | None = None
@@ -221,7 +203,7 @@ class UNameIt:
         Args:
             token (str): Token name.
             template (str): Template the occurrence belongs to.
-            match (re.Match[str]): Match of the `@token` occurrence in template.
+            match (re.Match[str]): Match of the `@{token}` occurrence in template.
 
         Returns:
             str: Named group regex for the token.
@@ -290,10 +272,7 @@ class UNameIt:
         logger.debug("Build tokens: %s", tokens)
 
         result = self._replace_tokens_with_defaults(template, tokens, payload)
-        logger.debug("Build first pass result: %s", result)
-
-        result = self._replace_tokens_with_payload(result, tokens, payload)
-        logger.debug("Build second pass result: %s", result)
+        logger.debug("Build result: %s", result)
 
         return result
 
@@ -304,7 +283,7 @@ class UNameIt:
 
         Tokens are extracted from the path using the template tokens defined in the config.
         Tokens that define `os` are path roots: they match their value for the current OS
-        (falling back to `default`). For example, on Linux with the `@root/@project` template
+        (falling back to `default`). For example, on Linux with the `@{root}/@{project}` template
         and root default `/projects`, `/projects/superdude` returns
         `{"root": "/projects", "project": "superdude"}`.
 
