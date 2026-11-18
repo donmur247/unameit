@@ -2,7 +2,7 @@
 
 import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Container, Mapping
 
 # A token is written as `@{name}`. The braces delimit the name, so a token can be followed
 # directly by literal text, e.g. `@{task}_@{task_description}` or `@{shot}_01`. OmegaConf's
@@ -10,6 +10,12 @@ from collections.abc import Mapping
 TOKEN_PATTERN = re.compile(r"@\{(\w+)\}")
 # Same as TOKEN_PATTERN, but also captures a `/` directly after the token.
 _TOKEN_WITH_TRAIL_PATTERN = re.compile(r"@\{(\w+)\}(/?)")
+
+# Optional part of a template, e.g. `[.@{udim}.]`. A group is optional only when it contains a
+# token, so other brackets are literal text. Brackets can't be nested.
+OPTIONAL_GROUP_PATTERN = re.compile(r"\[([^\[\]]*)\]")
+# Same as OPTIONAL_GROUP_PATTERN, but also captures a `/` directly after the group.
+_OPTIONAL_GROUP_WITH_SLASH_PATTERN = re.compile(r"\[([^\[\]]*)\](/?)")
 
 # Maps sys.platform values to the keys accepted under a token's `os` mapping.
 OS_NAMES = {"win32": "windows", "linux": "linux", "darwin": "macos"}
@@ -95,3 +101,32 @@ def substitute_token(text: str, token: str, value: str) -> str:
         str: Text with the token replaced.
     """
     return substitute_tokens(text, {token: value})
+
+
+def resolve_optional_groups(text: str, available: Container[str]) -> str:
+    """Keep or drop each optional group in text, depending on the tokens it contains.
+
+    A group is optional when it contains a token. It is kept, without its brackets, when every
+    token in it is available, and removed otherwise. When a removed group sits between two
+    slashes, one slash is removed with it, so `@{root}/[@{shot}]/@{name}` becomes
+    `@{root}/@{name}`.
+
+    Args:
+        text (str): Text that may contain optional groups.
+        available (Container[str]): Names of the tokens that have a value.
+
+    Returns:
+        str: Text with the optional groups resolved. Tokens themselves are left as they are.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        content, slash = match.group(1), match.group(2)
+        names = TOKEN_PATTERN.findall(content)
+        if not names:
+            return match.group(0)
+        if all(name in available for name in names):
+            return content + slash
+        between_slashes = match.start() > 0 and text[match.start() - 1] == "/"
+        return "" if between_slashes else slash
+
+    return _OPTIONAL_GROUP_WITH_SLASH_PATTERN.sub(replace, text)

@@ -8,10 +8,12 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from unameit.log import Logger
 from unameit.util import (
+    OPTIONAL_GROUP_PATTERN,
     OS_KEYS,
     TOKEN_PATTERN,
     current_os,
     find_tokens_from_template,
+    resolve_optional_groups,
     strip_boundary_slashes,
     substitute_tokens,
 )
@@ -138,8 +140,9 @@ class UNameIt:
     ) -> str:
         """Replace tokens in template with payload values, falling back to defaults.
 
-        Payload values take precedence over the defaults for the current OS. The template is
-        scanned once, so substituted values are never scanned for tokens again.
+        Payload values take precedence over the defaults for the current OS. Optional groups are
+        resolved first. The template is scanned once, so substituted values are never scanned for
+        tokens again.
 
         Args:
             template (str): Template string to replace tokens in.
@@ -157,6 +160,7 @@ class UNameIt:
                 default = self._resolve_default(token)
                 if default is not None:
                     values[token] = default
+        template = resolve_optional_groups(template, values)
         return substitute_tokens(template, values)
 
     def _build_search_pattern_from_template(
@@ -168,7 +172,8 @@ class UNameIt:
         match their literal value for the current OS, with slashes normalized the same way
         as in build_path(). Other tokens become named groups using the pattern set in the
         config (matched one or more times), falling back to any non-empty path segment
-        when the token defines no pattern.
+        when the token defines no pattern. Optional groups (brackets containing a token) may be
+        absent from the path.
 
         Args:
             template (str): Template string to build pattern from.
@@ -179,12 +184,60 @@ class UNameIt:
             str: Search pattern string.
         """
         end = len(template) if end is None else end
+        return self._span_pattern(template, 0, end, set())
+
+    def _span_pattern(
+        self, template: str, start: int, stop: int, seen: set[str]
+    ) -> str:
+        """Build the search pattern for template[start:stop], with its optional groups.
+
+        Optional groups become optional regex groups. A group that sits between two slashes
+        owns the second one, so that slash is part of the optional part, the same way
+        resolve_optional_groups() drops or keeps it when building.
+
+        Args:
+            template (str): Template string the span belongs to.
+            start (int): Start of the span in template.
+            stop (int): End of the span in template (exclusive).
+            seen (set[str]): Token names already matched, shared across the whole pattern.
+
+        Returns:
+            str: Search pattern string for the span.
+        """
         search_pattern = ""
-        seen = set()
-        pos = 0
-        for match in TOKEN_PATTERN.finditer(template):
-            if match.start() >= end:
-                break
+        pos = start
+        for group in OPTIONAL_GROUP_PATTERN.finditer(template, start, stop):
+            if not TOKEN_PATTERN.search(group.group(1)):
+                continue  # Brackets without tokens are literal text.
+            owns_slash = (
+                group.start() > 0
+                and template[group.start() - 1] == "/"
+                and group.end() < stop
+                and template[group.end()] == "/"
+            )
+            search_pattern += self._tokens_pattern(template, pos, group.start(), seen)
+            inner = self._tokens_pattern(template, group.start(1), group.end(1), seen)
+            search_pattern += f"(?:{inner}/)?" if owns_slash else f"(?:{inner})?"
+            pos = group.end() + 1 if owns_slash else group.end()
+        return search_pattern + self._tokens_pattern(template, pos, stop, seen)
+
+    def _tokens_pattern(
+        self, template: str, start: int, stop: int, seen: set[str]
+    ) -> str:
+        """Build the search pattern for a span of template that has no optional groups.
+
+        Args:
+            template (str): Template string the span belongs to.
+            start (int): Start of the span in template.
+            stop (int): End of the span in template (exclusive).
+            seen (set[str]): Token names already matched, shared across the whole pattern.
+
+        Returns:
+            str: Search pattern string for the span.
+        """
+        search_pattern = ""
+        pos = start
+        for match in TOKEN_PATTERN.finditer(template, start, stop):
             search_pattern += re.escape(template[pos : match.start()])
             token = match.group(1)
             if token in seen:
@@ -194,8 +247,7 @@ class UNameIt:
                 seen.add(token)
                 search_pattern += self._token_group(token, template, match)
             pos = match.end()
-        search_pattern += re.escape(template[pos:end])
-        return search_pattern
+        return search_pattern + re.escape(template[pos:stop])
 
     def _token_group(self, token: str, template: str, match: re.Match[str]) -> str:
         """Return the named group regex for one occurrence of a token in a template.
@@ -254,6 +306,9 @@ class UNameIt:
     def build_path(self, template_name: str, payload: dict[str, Any]) -> str | None:
         """Build path from selected template and payload data.
 
+        Optional bracket groups, e.g. `[.@{udim}.]`, are left out when a token in them has no
+        value.
+
         Args:
             template_name (str): Template name to use. Dots select nested templates, e.g.
                 `assets.root`.
@@ -282,6 +337,8 @@ class UNameIt:
         """Extract tokens from an input path and return a dictionary with matching tokens and values.
 
         Tokens are extracted from the path using the template tokens defined in the config.
+        Optional bracket groups, e.g. `[.@{udim}.]`, may be absent from the path, and their tokens
+        are then left out of the result.
         Tokens that define `os` are path roots: they match their value for the current OS
         (falling back to `default`). For example, on Linux with the `@{root}/@{project}` template
         and root default `/projects`, `/projects/superdude` returns
@@ -315,13 +372,21 @@ class UNameIt:
             # Match the built pattern against the whole path and collect the named groups.
             matched = re.fullmatch(search_pattern, path)
             if matched:
-                result = matched.groupdict()
+                # Optional groups that didn't match are None, so they are left out.
+                result = {k: v for k, v in matched.groupdict().items() if v is not None}
             return result
 
-        # Try the longest template prefix first. Prefixes end at a template "/" separator (or at
-        # the end of the template), and the match must be followed by "/" or the end of the path,
-        # so a token never matches part of a path element.
-        cuts = [i for i, char in enumerate(template) if char == "/" and i > 0]
+        # Try the longest template prefix first. Prefixes end at a template "/" separator outside
+        # optional groups (or at the end of the template), and the match must be followed by "/"
+        # or the end of the path, so a token never matches part of a path element.
+        groups = [group.span() for group in OPTIONAL_GROUP_PATTERN.finditer(template)]
+        cuts = [
+            i
+            for i, char in enumerate(template)
+            if char == "/"
+            and i > 0
+            and not any(start < i < end for start, end in groups)
+        ]
         cuts.append(len(template))
         matched: re.Match[str] | None = None
         for cut in reversed(cuts):
@@ -333,7 +398,7 @@ class UNameIt:
 
         remainder = path
         if matched:
-            result = matched.groupdict()
+            result = {k: v for k, v in matched.groupdict().items() if v is not None}
             remainder = path[matched.end() :]
         result["not_matched"] = [part for part in remainder.split("/") if part]
         return result

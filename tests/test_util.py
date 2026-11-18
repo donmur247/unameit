@@ -98,3 +98,36 @@ def test_substitute_tokens_single_pass():
     assert util.substitute_tokens("@{task}_@{task_description}", values) == "model_main"
     assert util.substitute_tokens("@{a}@{b}", {"a": "@{b}", "b": "x"}) == "@{b}x"
     assert util.substitute_tokens("@{a}@{b}", {"a": "x"}) == "x@{b}"
+
+
+@pytest.mark.parametrize(
+    ("text", "available", "expected"),
+    [
+        ("a_[.@{udim}.]b", {"udim"}, "a_.@{udim}.b"),
+        ("a_[.@{udim}.]b", set(), "a_b"),
+        ("[@{a}_@{b}]", {"a"}, ""),
+        ("[@{a}_@{b}]", {"a", "b"}, "@{a}_@{b}"),
+        ("x[raw]y", set(), "x[raw]y"),
+        ("x[raw]@{a}[.@{b}]", {"a"}, "x[raw]@{a}"),
+        ("[unclosed @{a}", {"a"}, "[unclosed @{a}"),
+        ("@{root}/[@{shot}]/@{name}", set(), "@{root}/@{name}"),
+        ("@{root}/[@{shot}]/@{name}", {"shot"}, "@{root}/@{shot}/@{name}"),
+        ("@{root}/[@{shot}/]@{name}", set(), "@{root}/@{name}"),
+        ("@{root}/[@{shot}/]@{name}", {"shot"}, "@{root}/@{shot}/@{name}"),
+        ("a[@{x}]/b", set(), "a/b"),
+    ],
+)
+def test_resolve_optional_groups(text: str, available: set[str], expected: str):
+    """Test optional groups are kept or dropped by their tokens, with one slash kept."""
+    assert util.resolve_optional_groups(text, available) == expected
+
+
+def test_find_tokens_inside_optional_groups():
+    """Test tokens inside optional groups are found like any other token."""
+    template = "@{material_name}_@{channel_name}[.@{udim}.]@{extension}"
+    assert util.find_tokens_from_template(template) == [
+        "material_name",
+        "channel_name",
+        "extension",
+        "udim",
+    ]

@@ -13,26 +13,38 @@ tokens:
       windows: "P:"
       macos: "${tokens.root.default}"
   project:
-    pattern: "[a-zA-Z0-9-]"
+    pattern: '[a-zA-Z0-9-]'
   asset_category:
-    pattern: "[a-zA-Z0-9-]"
+    pattern: '[a-zA-Z0-9-]'
   asset_name:
-    pattern: "[a-zA-Z0-9-]"
+    pattern: '[a-zA-Z0-9-]'
   asset_variant:
     default: "main"
-    pattern: "[a-zA-Z0-9-]"
+    pattern: '[a-zA-Z0-9-]'
   episode:
-    pattern: "[a-zA-Z0-9]"
+    pattern: '[a-zA-Z0-9]'
   sequence:
-    pattern: "[a-zA-Z0-9]"
+    pattern: '[a-zA-Z0-9]'
   shot:
-    pattern: "[a-zA-Z0-9]"
+    pattern: '[a-zA-Z0-9]'
   task:
-    pattern: "[a-zA-Z-]"
+    pattern: '[a-zA-Z-]'
   task_description:
-    pattern: "[a-zA-Z-]"
+    pattern: '[a-zA-Z-]'
   dcc:
-    pattern: "[a-zA-Z0-9]"
+    pattern: '[a-zA-Z0-9]'
+  version:
+    default: "v001"
+    pattern: 'v\d+'
+  extension:
+    pattern: '\.[a-z]+'
+  material_name:
+    pattern: '[a-zA-Z0-9-]'
+  channel_name:
+    pattern: '[a-zA-Z]'
+  udim:
+    pattern: '\d{4}'
+
 
 templates:
   # Template with empty value, treated as not found by build_path()
@@ -47,6 +59,21 @@ templates:
     publish_root: "${.variant_root}/publish"
     work_root: "${.variant_root}/work"
     work_dcc_root: "${.work_root}/${templates.task_type}/@{dcc}"
+
+    scene_name: "@{project}_@{asset_category}_@{asset_name}_@{asset_variant}_${templates.task_type}_@{version}"
+    # This texture name is an example to show optional token where if it is not provided it will be
+    # skipped and process the next token.
+    texture_name: "@{material_name}_@{channel_name}[.@{udim}]@{extension}"
+
+    # Maya project examples
+    maya_work_root: "${.work_root}/${templates.task_type}/maya"
+    maya_work_scene_root: "${.maya_work_root}/scenes"
+    maya_work_scene: "${.maya_work_scene_root}/${.scene_name}@{extension}"
+    maya_work_sourceimages_root: "${.maya_work_root}/sourceimages"
+    maya_work_texture: "${.maya_work_sourceimages_root}/${.texture_name}"
+    maya_work_images_root: "${.maya_work_root}/images"
+    maya_work_cache_root: "${.maya_work_root}/cache"
+
   shots:
     root: "${templates.project_root}/shots"
     episode_root: "${.root}/@{episode}"

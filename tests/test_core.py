@@ -199,6 +199,118 @@ def test_unameit_build_path_bare_token_is_literal(unameit_config: UNameIt):
     assert unameit_config.build_path("bare", {"project": "MYPUPPIES"}) is None
 
 
+def test_unameit_build_path_optional_token_provided(unameit_config: UNameIt):
+    """Test an optional group is kept, without its brackets, when its token is provided."""
+    payload = {
+        "material_name": "brick",
+        "channel_name": "diffuse",
+        "udim": "1001",
+        "extension": ".exr",
+    }
+    result = unameit_config.build_path("assets.texture_name", payload)
+    assert result == "brick_diffuse.1001.exr"
+
+
+def test_unameit_build_path_optional_token_missing(unameit_config: UNameIt):
+    """Test an optional group is removed, dots included, when its token is missing."""
+    payload = {"material_name": "brick", "channel_name": "diffuse", "extension": ".exr"}
+    result = unameit_config.build_path("assets.texture_name", payload)
+    assert result == "brick_diffuse.exr"
+
+
+def test_unameit_build_path_optional_token_uses_default(unameit_config: UNameIt):
+    """Test an optional group is kept when its token has a default value."""
+    unameit_config._templates["variant_tag"] = "@{material_name}[_@{asset_variant}]"
+    result = unameit_config.build_path("variant_tag", {"material_name": "brick"})
+    assert result == "brick_main"
+    payload = {"material_name": "brick", "asset_variant": "dirty"}
+    assert unameit_config.build_path("variant_tag", payload) == "brick_dirty"
+
+
+def test_unameit_build_path_literal_brackets(unameit_config: UNameIt):
+    """Test brackets without a token are literal text."""
+    unameit_config._templates["literal"] = "@{material_name}[raw]"
+    assert unameit_config.build_path("literal", {"material_name": "brick"}) == "brick[raw]"
+
+
+def test_unameit_build_path_optional_segment_between_slashes(unameit_config: UNameIt):
+    """Test a dropped optional segment between slashes leaves a single slash."""
+    unameit_config._templates["segment_path"] = "@{root}/[@{shot}]/@{name}"
+    assert unameit_config.build_path("segment_path", {"name": "x"}) == "/projects/x"
+    payload = {"shot": "sh010", "name": "x"}
+    assert unameit_config.build_path("segment_path", payload) == "/projects/sh010/x"
+
+
+def test_unameit_extract_path_optional_token_matched(unameit_config: UNameIt):
+    """Test an optional token is extracted when it is present in the path."""
+    result = unameit_config.extract_path("assets.texture_name", "brick_diffuse.1001.exr")
+    assert result == {
+        "material_name": "brick",
+        "channel_name": "diffuse",
+        "udim": "1001",
+        "extension": ".exr",
+    }
+
+
+def test_unameit_extract_path_optional_token_not_matched(unameit_config: UNameIt):
+    """Test an optional token is left out of the result when it is absent from the path."""
+    result = unameit_config.extract_path("assets.texture_name", "brick_diffuse.exr")
+    assert result == {
+        "material_name": "brick",
+        "channel_name": "diffuse",
+        "extension": ".exr",
+    }
+
+
+def test_unameit_extract_path_optional_token_bad_value_returns_empty(
+    unameit_config: UNameIt,
+):
+    """Test a value that doesn't fit the optional group fails the whole match."""
+    assert unameit_config.extract_path("assets.texture_name", "brick_diffuse.10.exr") == {}
+
+
+def test_unameit_extract_path_not_exact_optional_token(unameit_config: UNameIt):
+    """Test exact=False extracts an optional token and reports the leftover element."""
+    result = unameit_config.extract_path(
+        "assets.texture_name", "brick_diffuse.exr/extra", exact=False
+    )
+    assert result == {
+        "material_name": "brick",
+        "channel_name": "diffuse",
+        "extension": ".exr",
+        "not_matched": ["extra"],
+    }
+
+
+def test_unameit_extract_path_optional_segment_between_slashes(
+    unameit_config: UNameIt,
+):
+    """Test an optional path segment between slashes is extracted when it is present."""
+    unameit_config._templates["segment_path"] = "@{root}/[@{shot}]/@{name}"
+    assert unameit_config.extract_path("segment_path", "/projects/sh010/x") == {
+        "root": "/projects",
+        "shot": "sh010",
+        "name": "x",
+    }
+    assert unameit_config.extract_path("segment_path", "/projects/x") == {
+        "root": "/projects",
+        "name": "x",
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"material_name": "brick", "channel_name": "diffuse", "udim": "1001", "extension": ".exr"},
+        {"material_name": "brick", "channel_name": "diffuse", "extension": ".exr"},
+    ],
+)
+def test_unameit_optional_token_round_trip(unameit_config: UNameIt, payload: dict):
+    """Test building and then extracting an optional token gives back the same payload."""
+    path = unameit_config.build_path("assets.texture_name", payload)
+    assert unameit_config.extract_path("assets.texture_name", path) == payload
+
+
 def test_unameit_build_path_unknown_template_returns_none(unameit_config: UNameIt):
     """Test build_path() returns None for a nonexistent template name."""
     assert unameit_config.build_path("nonexistent", {"project": "myproj"}) is None
